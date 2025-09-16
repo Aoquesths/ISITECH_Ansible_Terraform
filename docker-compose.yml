@@ -1,49 +1,79 @@
 version: '3.8'
 
+x-common: &common
+  image: ubuntu:24.04
+  init: true                       # tini en PID 1 -> évite les <defunct>
+  networks: [ansible-lab]
+  environment:
+    APP_ENV: dev                   # <-- variable d'env "propre" (au lieu d'Ansible 'environment')
+    DEBIAN_FRONTEND: noninteractive
+  command: >
+    bash -lc "
+      set -euo pipefail;
+      apt-get update -y &&
+      apt-get install -y openssh-server python3 sudo iproute2 net-tools curl lsof &&
+      mkdir -p /run/sshd &&
+      id ansible >/dev/null 2>&1 || useradd -m -s /bin/bash ansible &&
+      echo 'ansible:ansible' | chpasswd &&
+      echo 'ansible ALL=(ALL) NOPASSWD:ALL' >/etc/sudoers.d/ansible &&
+      chmod 0440 /etc/sudoers.d/ansible &&
+      sed -ri 's/^#?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config &&
+    sed -ri 's/^#?UsePAM .*/UsePAM yes/' /etc/ssh/sshd_config &&
+    /usr/sbin/sshd -D &
+    tail -f /dev/null
+    "
+  healthcheck:
+    test: ["CMD-SHELL", "ss -lntp | grep -q ':22'"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+    start_period: 5s
+
 services:
   # Serveurs web
   web1:
-    image: ubuntu:24.04
+    <<: *common
     container_name: ansible-web1
     hostname: web1
-    command: /bin/bash -c "apt update && apt install -y openssh-server python3 sudo && useradd -m -s /bin/bash ansible && echo 'ansible:ansible' | chpasswd && echo 'ansible ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && service ssh start && tail -f /dev/null"
-    ports:
-      - "2221:22"
-    networks:
-      - ansible-lab
+    environment:
+      APP_ENV: dev
+      DEBIAN_FRONTEND: noninteractive
+      SERVER_ROLE: web
+    ports: ["2221:22"]
 
   web2:
-    image: ubuntu:24.04
+    <<: *common
     container_name: ansible-web2
     hostname: web2
-    command: /bin/bash -c "apt update && apt install -y openssh-server python3 sudo && useradd -m -s /bin/bash ansible && echo 'ansible:ansible' | chpasswd && echo 'ansible ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && service ssh start && tail -f /dev/null"
-    ports:
-      - "2222:22"
-    networks:
-      - ansible-lab
+    environment:
+      APP_ENV: dev
+      DEBIAN_FRONTEND: noninteractive
+      SERVER_ROLE: web
+    ports: ["2222:22"]
 
   # Serveur base de données
   db1:
-    image: ubuntu:24.04
+    <<: *common
     container_name: ansible-db1
     hostname: db1
-    command: /bin/bash -c "apt update && apt install -y openssh-server python3 sudo && useradd -m -s /bin/bash ansible && echo 'ansible:ansible' | chpasswd && echo 'ansible ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && service ssh start && tail -f /dev/null"
-    ports:
-      - "2223:22"
-    networks:
-      - ansible-lab
+    environment:
+      APP_ENV: dev
+      DEBIAN_FRONTEND: noninteractive
+      SERVER_ROLE: db
+    ports: ["2223:22"]
 
   # Load balancer
   lb1:
-    image: ubuntu:24.04
+    <<: *common
     container_name: ansible-lb1
     hostname: lb1
-    command: /bin/bash -c "apt update && apt install -y openssh-server python3 sudo && useradd -m -s /bin/bash ansible && echo 'ansible:ansible' | chpasswd && echo 'ansible ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && service ssh start && tail -f /dev/null"
+    environment:
+      APP_ENV: dev
+      DEBIAN_FRONTEND: noninteractive
+      SERVER_ROLE: lb
     ports:
       - "2224:22"
       - "8080:80"
-    networks:
-      - ansible-lab
 
 networks:
   ansible-lab:
