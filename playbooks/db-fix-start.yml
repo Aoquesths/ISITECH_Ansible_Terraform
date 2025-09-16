@@ -1,0 +1,49 @@
+---
+- name: DB fix + test
+  hosts: databases
+  become: yes
+  tasks:
+    - name: Vérifier si mysqld tourne (pgrep)
+      shell: "pgrep -x mysqld"
+      register: mysqld_proc
+      changed_when: false
+      failed_when: false
+
+    - name: Assurer /run/mysqld
+      file:
+        path: /var/run/mysqld
+        state: directory
+        owner: mysql
+        group: mysql
+        mode: '0755'
+
+    - name: Initialiser datadir si nécessaire
+      shell: "test -d /var/lib/mysql/mysql || mysqld --initialize-insecure --user=mysql --datadir=/var/lib/mysql"
+      args: { executable: /bin/bash }
+      changed_when: false
+      failed_when: false
+
+    - name: Démarrer mysqld_safe si nécessaire
+      shell: "nohup mysqld_safe --datadir=/var/lib/mysql --socket=/var/run/mysqld/mysqld.sock --port=3306 >/var/log/mysql/mysqld.safe.log 2>&1 &"
+      when: mysqld_proc.rc != 0
+
+    - name: Attendre la socket
+      shell: "test -S /var/run/mysqld/mysqld.sock"
+      register: sockcheck
+      retries: 30
+      delay: 2
+      until: sockcheck.rc == 0
+      changed_when: false
+
+    - name: Vérifier port 3306
+      wait_for:
+        port: 3306
+        timeout: 40
+
+    - name: Tester la connexion MySQL (SHOW DATABASES)
+      shell: "mysql -uroot -pSecurePassword123\\! -e 'SHOW DATABASES;'"
+      register: db_test
+      changed_when: false
+
+    - debug:
+        msg: "{{ db_test.stdout_lines }}"

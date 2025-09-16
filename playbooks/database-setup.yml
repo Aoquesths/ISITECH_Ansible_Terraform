@@ -1,0 +1,161 @@
+---
+- name: TP2 - Configuration base de données
+  hosts: databases
+  become: yes
+
+  vars:
+    mysql_root_password: "SecurePassword123!"
+    mysql_databases:
+      - { name: app_production,  encoding: utf8mb4, collation: utf8mb4_unicode_ci }
+      - { name: app_development, encoding: utf8mb4, collation: utf8mb4_unicode_ci }
+    mysql_users:
+      - { name: webapp,     password: "WebApp2024!", host: "%",         priv: "app_production.*:ALL/app_development.*:ALL" }
+      - { name: monitoring, password: "Monitor2024!", host: "localhost", priv: "*.*:PROCESS,REPLICATION CLIENT" }
+
+  tasks:
+    - name: Paquets nécessaires
+      apt:
+        name: [mysql-server, mysql-client, python3-pymysql, iproute2, net-tools]
+        state: present
+        update_cache: yes
+
+    - name: Nettoyer PID/Socket et droits
+      shell: |
+        pkill -TERM mysqld || true; pkill -TERM mysqld_safe || true
+        sleep 1
+        pkill -KILL mysqld || true; pkill -KILL mysqld_safe || true
+        rm -f /var/run/mysqld/mysqld.sock /var/run/mysqld/mysqld.pid || true
+        mkdir -p /var/run/mysqld && chown mysql:mysql /var/run/mysqld
+        chown -R mysql:mysql /var/lib/mysql
+
+    - name: Initialiser le datadir si nécessaire
+      shell: |
+        test -d /var/lib/mysql/mysql || mysqld --initialize-insecure --user=mysql --datadir=/var/lib/mysql
+      args: { executable: /bin/bash }
+
+    - name: Paramètres réseau MySQL
+      lineinfile:
+        path: /etc/mysql/mysql.conf.d/mysqld.cnf
+        regexp: '^{{ item.key }}'
+        line: "{{ item.key }} = {{ item.val }}"
+        create: yes
+        backup: yes
+      loop:
+        - { key: bind-address,   val: 0.0.0.0 }
+        - { key: skip-networking, val: 0 }
+        - { key: port,           val: 3306 }
+
+    - name: Démarrer mysqld (mode conteneur)
+      shell: |
+        install -d -o mysql -g mysql /var/run/mysqld || true
+        install -d -o mysql -g mysql /var/log/mysql || true
+        if ! pgrep -x mysqld >/dev/null; then
+          nohup /usr/bin/mysqld_safe \
+            --datadir=/var/lib/mysql \
+            --socket=/var/run/mysqld/mysqld.sock \
+            --port=3306 \
+            --pid-file=/var/run/mysqld/mysqld.pid \
+            > /var/log/mysql/mysqld.safe.log 2>&1 &
+        fi
+      args: { executable: /bin/bash }
+
+    - name: Attendre la socket (boucle)
+      shell: test -S /var/run/mysqld/mysqld.sock
+      register: mysql_socket_check
+      retries: 30
+      delay: 2
+      until: mysql_socket_check.rc == 0
+      changed_when: false
+
+    - name: Attendre port 3306
+      wait_for:
+        port: 3306
+        timeout: 90
+
+    - name: Afficher log mysqld en cas d'échec
+      when: mysql_socket_check is failed
+      shell: tail -n 60 /var/log/mysql/mysqld.safe.log || true
+      register: mysql_log_tail
+      changed_when: false
+      failed_when: false
+    - debug:
+        var: mysql_log_tail.stdout_lines
+      when: mysql_log_tail is defined and mysql_socket_check is failed
+
+    - name: Assurer mot de passe root (plugin mysql_native_password)
+      community.mysql.mysql_user:
+        name: root
+        password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        host_all: yes
+        check_implicit_admin: true
+        plugin: mysql_native_password
+      register: ensure_root_pass
+      failed_when: ensure_root_pass is failed and ('Access denied' not in (ensure_root_pass.msg|default('')))
+
+    - name: Vérifier plugin d'auth root
+      shell: |
+        mysql -uroot -e "SELECT plugin FROM mysql.user WHERE user='root' AND host='localhost';" 2>/dev/null | tail -n1
+      register: root_plugin_check
+      changed_when: false
+      failed_when: false
+
+    - name: Forcer plugin mysql_native_password si auth_socket
+      when: root_plugin_check.stdout == 'auth_socket'
+      shell: |
+        mysql -uroot -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
+      register: alter_root_plugin
+      changed_when: alter_root_plugin.rc == 0
+      failed_when: false
+
+    - name: Ré-appliquer mot de passe root après changement plugin
+      when: root_plugin_check.stdout == 'auth_socket'
+      community.mysql.mysql_user:
+        name: root
+        password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        host_all: yes
+        check_implicit_admin: true
+        plugin: mysql_native_password
+      register: ensure_root_pass_after
+      failed_when: ensure_root_pass_after is failed and ('Access denied' not in (ensure_root_pass_after.msg|default('')))
+
+    - name: Supprimer utilisateurs anonymes
+      community.mysql.mysql_user:
+        name: ""
+        host_all: yes
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Supprimer base test
+      community.mysql.mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Créer les bases
+      community.mysql.mysql_db:
+        name: "{{ item.name }}"
+        encoding: "{{ item.encoding }}"
+        collation: "{{ item.collation }}"
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      loop: "{{ mysql_databases }}"
+
+    - name: Créer les utilisateurs applicatifs
+      community.mysql.mysql_user:
+        name: "{{ item.name }}"
+        password: "{{ item.password }}"
+        host: "{{ item.host }}"
+        priv: "{{ item.priv }}"
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      loop: "{{ mysql_users }}"

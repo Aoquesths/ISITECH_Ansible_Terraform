@@ -1,0 +1,75 @@
+---
+- name: TP2 - Configuration des serveurs web
+  hosts: webservers
+  become: yes
+
+  vars:
+    web_user: www-data
+    document_root: /var/www/html
+    site_name: "formation-ansible"
+
+  tasks:
+    - name: Installer Nginx
+      apt:
+        name: nginx
+        state: present
+        update_cache: yes
+
+    - name: Créer document_root
+      file:
+        path: "{{ document_root }}"
+        state: directory
+        owner: "{{ web_user }}"
+        group: "{{ web_user }}"
+        mode: '0755'
+
+    - name: Page d'accueil
+      copy:
+        dest: "{{ document_root }}/index.html"
+        owner: "{{ web_user }}"
+        group: "{{ web_user }}"
+        mode: '0644'
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head><meta charset="utf-8"><title>{{ inventory_hostname }} - {{ environment }}</title></head>
+          <body style="font-family: Arial; margin:40px">
+            <h1>🚀 {{ inventory_hostname }}</h1>
+            <p>Environnement: {{ environment }}</p>
+            <p>Généré le: {{ ansible_date_time.iso8601 }}</p>
+          </body>
+          </html>
+
+    - name: VHost formation-ansible
+      copy:
+        dest: "/etc/nginx/sites-available/{{ site_name }}"
+        mode: '0644'
+        content: |
+          server {
+              listen 80;
+              server_name {{ inventory_hostname }};
+              root {{ document_root }};
+              index index.html;
+              access_log /var/log/nginx/{{ inventory_hostname }}_access.log;
+              error_log  /var/log/nginx/{{ inventory_hostname }}_error.log;
+          }
+
+    - name: Activer le site
+      file:
+        src: "/etc/nginx/sites-available/{{ site_name }}"
+        dest: "/etc/nginx/sites-enabled/{{ site_name }}"
+        state: link
+        force: yes
+
+    - name: Désactiver le site par défaut
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Tester la conf Nginx
+      command: nginx -t
+      register: nginx_test
+      changed_when: false
+
+    - name: Recharger Nginx
+      service: { name: nginx, state: reloaded }
