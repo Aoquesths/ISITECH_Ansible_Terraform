@@ -1,0 +1,28 @@
+- name: "🔐 Test d'ansible-vault"
+  hosts: web1
+  become: yes
+  gather_facts: yes
+
+  # Charge secrets depuis un fichier (vaulté si besoin)
+  tasks:
+    - name: "📢 Charger les secrets"
+      include_vars: secrets.yml
+      tags: [secrets]
+
+    - name: "Vérifier que les secrets soient charges"
+      debug:
+        msg:
+          - "La clé API est : {{ api_key[0:6] }}"
+          - "Message secret est : {{ secret_message }}"
+      tags: [test]
+
+    - name: "📄 Création d'un fichier de test avec les secrets"
+      copy:
+        content: |
+          Application deployee le {{ ansible_date_time.date }}
+          API: {{ api_key }}
+          Admin: {{ admin_password }}
+          Message secret: {{ secret_message }}
+        dest: /tmp/config-remplie-de-secret.yml
+        mode: '0600'
+      tags: [deploy]

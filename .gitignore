@@ -1,0 +1,6 @@
+# Ansible artifacts and local secrets
+vault-password.txt
+*.retry
+*.log
+__pycache__/
+*.pyc
