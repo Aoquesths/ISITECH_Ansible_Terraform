@@ -1,0 +1,51 @@
+---
+- name: Ensure apt cache updated
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+- name: Install common packages
+  apt:
+    name: "{{ common_packages }}"
+    state: present
+  become: true
+
+- name: Ensure application group exists
+  group:
+    name: "{{ app_group }}"
+    state: present
+  become: true
+
+- name: Create application user
+  user:
+    name: "{{ app_user }}"
+    group: "{{ app_group }}"
+    create_home: true
+    state: present
+  become: true
+
+- name: Ensure www directories exist
+  file:
+    path: "/var/www/{{ item }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0755'
+  loop:
+    - app1
+    - app2
+  become: true
+
+- name: Deploy simple index files
+  template:
+    src: fancy_index.html.j2
+    dest: "/var/www/{{ item }}/index.html"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0644'
+  loop:
+    - app1
+    - app2
+  become: true
+  when: "'webservers' in group_names"

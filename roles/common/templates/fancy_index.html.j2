@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Infra Dashboard • {{ inventory_hostname }} • {{ env_name }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#0f172a; --panel:#111827; --fg:#e5e7eb; --muted:#94a3b8; --accent:#22d3ee; --accent2:#a78bfa; --ok:#34d399; --warn:#f59e0b; --bad:#f87171;
+    }
+    [data-theme="light"]{
+      --bg:#f8fafc; --panel:#ffffff; --fg:#0f172a; --muted:#475569; --accent:#0891b2; --accent2:#7c3aed; --ok:#059669; --warn:#b45309; --bad:#dc2626;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;background:linear-gradient(180deg,#0b1220, #0f172a);color:var(--fg);}
+    header{padding:28px 20px;border-bottom:1px solid #1f2937;background:radial-gradient(1200px 400px at 20% -10%,rgba(34,211,238,.15),transparent),radial-gradient(1000px 300px at 80% -20%,rgba(167,139,250,.18),transparent);} 
+    .container{max-width:1100px;margin:0 auto;padding:0 12px}
+    h1{font-size:28px;margin:0 0 8px 0;letter-spacing:.2px}
+    .subtitle{color:var(--muted)}
+    .grid{display:grid;gap:16px;padding:20px}
+    .cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .panels{grid-template-columns:repeat(12,minmax(0,1fr))}
+    .card,.panel{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));border:1px solid rgba(148,163,184,.18);border-radius:14px;backdrop-filter:blur(6px);}
+    .card{padding:16px}
+    .kpi{font-size:12px;color:var(--muted);margin-bottom:8px}
+    .value{font-size:22px;font-weight:800}
+    .tag{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;margin-left:8px;background:rgba(34,211,238,.12);border:1px solid rgba(34,211,238,.35);color:#67e8f9}
+    .panel{padding:16px}
+    .panel h3{margin:0 0 12px 0;font-size:16px}
+    .span-6{grid-column:span 6}
+    .span-8{grid-column:span 8}
+    .span-4{grid-column:span 4}
+    .table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    .table th{color:var(--muted);font-weight:600;text-align:left;font-size:12px;padding:4px 8px}
+    .row{background:rgba(17,24,39,.6);border:1px solid rgba(148,163,184,.18);border-radius:10px}
+    .cell{padding:10px 12px;font-size:13px}
+    .pill{padding:3px 8px;border-radius:999px;font-size:12px;border:1px solid rgba(148,163,184,.28);color:#e5e7eb}
+    .ok{background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.35);color:#86efac}
+    .warn{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.35);color:#fcd34d}
+    .bad{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.35);color:#fecaca}
+    footer{color:var(--muted);text-align:center;padding:16px}
+    a{color:#93c5fd}
+    @media (max-width:960px){.cards{grid-template-columns:repeat(2,1fr)}.span-6,.span-8,.span-4{grid-column:span 12}}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>Infra Dashboard — {{ primary_domain }} <span class="tag">env: {{ env_name }}</span></h1>
+      <div class="subtitle">Host: {{ inventory_hostname }} • IP: {{ ansible_default_ipv4.address | default('127.0.0.1') }} • OS: {{ ansible_distribution }} {{ ansible_distribution_version }} • Kernel: {{ ansible_kernel }}</div>
+    </div>
+  </header>
+
+  <div class="container">
+    <section class="grid cards">
+      <div class="card">
+        <div class="kpi">CPU</div>
+        <div class="value">{{ ansible_processor_vcpus | default(ansible_processor_count) | default('?') }} vCPU</div>
+      </div>
+      <div class="card">
+        <div class="kpi">RAM</div>
+        <div class="value">{{ (ansible_memtotal_mb | default(0)) }} MB</div>
+      </div>
+      <div class="card">
+        <div class="kpi">Disk root</div>
+        <div class="value">{{ ansible_mounts | selectattr('mount','equalto','/') | map(attribute='size_total') | first | default(0) | int // (1024*1024*1024) }} GB</div>
+      </div>
+      <div class="card">
+        <div class="kpi">Live</div>
+        <div class="value"><span id="activeConns">–</span> active • <span id="pingMs">–</span> ms</div>
+      </div>
+    </section>
+
+    <section class="grid panels">
+      <div class="panel span-8">
+  <h3>Resource Overview</h3>
+  <canvas id="resChart" height="110"></canvas>
+  <div style="height:8px"></div>
+  <canvas id="liveChart" height="80"></canvas>
+      </div>
+      <div class="panel span-4">
+        <h3>Network</h3>
+        <table class="table">
+          <thead>
+            <tr><th>Interface</th><th>IPv4</th><th>MAC</th></tr>
+          </thead>
+          <tbody>
+          {% for name, data in ansible_facts.items() %}
+            {% if name is match('^ansible_.*') and data is mapping and (data.ipv4 is defined or data.ipv6 is defined) and (data.device is defined) %}
+              <tr class="row"><td class="cell">{{ data.device }}</td><td class="cell">{{ (data.ipv4.address if data.ipv4 is defined else (data.ipv6[0].address if data.ipv6 is defined else '-')) }}</td><td class="cell">{{ data.macaddress | default('-') }}</td></tr>
+            {% endif %}
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel span-6">
+        <h3>Software</h3>
+        <table class="table">
+          <tbody>
+            <tr class="row"><td class="cell">Nginx</td><td class="cell">{{ (nginx.worker_processes if (nginx is defined and nginx.worker_processes is defined) else 'auto') }} workers • status: {{ 'on' if (nginx is defined and (nginx.enable_status | default(false))) else 'off' }}</td></tr>
+            <tr class="row"><td class="cell">HAProxy</td><td class="cell">{{ (haproxy.algorithm if haproxy is defined and haproxy.algorithm is defined else 'roundrobin') }} • stats: {{ 'on' if (haproxy is defined and haproxy.stats is defined and (haproxy.stats.enabled | default(false))) else 'off' }}</td></tr>
+            <tr class="row"><td class="cell">MySQL</td><td class="cell">{{ (mysql.version if mysql is defined and mysql.version is defined else '8.x') }} • DB: {{ ((mysql.databases if mysql is defined and mysql.databases is defined else []) | map(attribute='name') | join(', ')) }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel span-6">
+        <h3>Inventory</h3>
+        <table class="table">
+          <thead><tr><th>Group</th><th>Hosts</th></tr></thead>
+          <tbody>
+            {% for g, hosts in groups.items() %}
+              {% if g not in ['all','ungrouped'] %}
+                <tr class="row"><td class="cell">{{ g }}</td><td class="cell">{{ hosts | join(', ') }}</td></tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    Served by {{ inventory_hostname }} • <span id="clock">{{ ansible_date_time.date }} {{ ansible_date_time.time }}</span> • X-Env: {{ env_name }} • <span style="opacity:.75">by Aoquesths</span>
+  </footer>
+
+  <script>
+    // Fake timeseries based on static facts for a pretty chart
+    const memMb = {{ ansible_memtotal_mb | default(512) }};
+    const usedMb = Math.round(memMb * 0.42);
+    const cpu = {{ ansible_processor_vcpus | default(1) }};
+    const diskGb = {{ (ansible_mounts | selectattr('mount','equalto','/') | map(attribute='size_total') | first | default(0) | int // (1024*1024*1024)) }};
+    const ctx = document.getElementById('resChart');
+    const resChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: Array.from({length: 12}, (_,i) => `t-${12-i}`),
+        datasets: [
+          {label:'RAM used (MB)', data: Array.from({length: 12}, () => usedMb + Math.round((Math.random()-0.5)*50)), borderColor:'#22d3ee', backgroundColor:'rgba(34,211,238,.18)', tension:.35, fill:true},
+          {label:'CPU cores', data: Array(12).fill(cpu), borderColor:'#a78bfa', backgroundColor:'rgba(167,139,250,.18)', tension:.35, fill:true},
+          {label:'Disk / (GB)', data: Array(12).fill(diskGb), borderColor:'#34d399', backgroundColor:'rgba(52,211,153,.18)', tension:.35, fill:true}
+        ]
+      },
+      options: {plugins:{legend:{labels:{color:'#cbd5e1'}}}, scales:{x:{ticks:{color:'#94a3b8'}}, y:{ticks:{color:'#94a3b8'}}}}
+    });
+    // Force dark theme and enable real-time clock
+    const root = document.documentElement;
+    root.setAttribute('data-theme', 'dark');
+    const clockEl = document.getElementById('clock');
+    function tick(){
+      const d = new Date();
+      const pad = (n)=> n.toString().padStart(2,'0');
+      const out = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      if (clockEl) clockEl.textContent = out;
+    }
+    tick();
+    setInterval(tick, 1000);
+
+    // Live metrics: nginx active connections + ping
+    const activeEl = document.getElementById('activeConns');
+    const pingEl = document.getElementById('pingMs');
+    const liveCtx = document.getElementById('liveChart');
+    const maxPoints = 30;
+    const liveData = [];
+    const liveLabels = [];
+    const liveChart = new Chart(liveCtx, {
+      type: 'line',
+      data: { labels: liveLabels, datasets: [{ label: 'Active conns', data: liveData, borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.18)', tension:.3, fill:true }]},
+      options: {plugins:{legend:{labels:{color:'#cbd5e1'}}}, scales:{x:{ticks:{color:'#94a3b8'}}, y:{ticks:{color:'#94a3b8'}}}}
+    });
+
+    async function updateStatus(){
+      try{
+        const t0 = performance.now();
+        const pingRes = await fetch('/ping', {cache:'no-store'});
+        const t1 = performance.now();
+        const ms = Math.max(0, Math.round(t1 - t0));
+        pingEl && (pingEl.textContent = ms);
+      }catch(e){ /* ignore */ }
+      try{
+        const res = await fetch('/nginx_status', {cache:'no-store'});
+        const txt = await res.text();
+        const m = txt.match(/Active connections:\s*(\d+)/i);
+        const active = m ? parseInt(m[1],10) : 0;
+        if (activeEl) activeEl.textContent = active;
+        const ts = new Date();
+        const label = ts.toTimeString().split(' ')[0];
+        liveLabels.push(label);
+        liveData.push(active);
+        if (liveLabels.length > maxPoints){ liveLabels.shift(); liveData.shift(); }
+        liveChart.update('none');
+      }catch(e){ /* ignore */ }
+    }
+    updateStatus();
+    setInterval(updateStatus, 3000);
+  </script>
+</body>
+</html>

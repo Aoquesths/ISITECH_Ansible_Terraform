@@ -1,0 +1,3 @@
+server_specific:
+  weight: 5
+  extra_header: X-Server-ID-2

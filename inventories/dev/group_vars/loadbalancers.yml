@@ -1,0 +1,11 @@
+haproxy:
+  algorithm: roundrobin
+  timeout_connect: 5s
+  timeout_client: 50s
+  timeout_server: 50s
+  stats:
+    enable: true
+    bind: 0.0.0.0:8404
+    uri: /
+    auth: admin:adminpassword
+  maxconn: 4096

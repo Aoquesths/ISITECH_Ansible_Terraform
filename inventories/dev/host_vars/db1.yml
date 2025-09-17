@@ -1,0 +1,14 @@
+mysql:
+  version: 8.0
+  root_password: rootpass
+  databases:
+    - name: appdb
+      encoding: utf8mb4
+      collation: utf8mb4_unicode_ci
+  users:
+    - name: appuser
+      password: apppass
+      priv: "appdb.*:ALL"
+  innodb_buffer_pool_size_mb: 384
+  replication:
+    enabled: false

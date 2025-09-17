@@ -1,0 +1,7 @@
+---
+- name: Playbook Web uniquement
+  hosts: webservers
+  serial: 1
+  roles:
+    - common
+    - web

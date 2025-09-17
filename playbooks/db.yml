@@ -1,0 +1,6 @@
+---
+- name: Playbook DB uniquement
+  hosts: dbservers
+  roles:
+    - common
+    - db

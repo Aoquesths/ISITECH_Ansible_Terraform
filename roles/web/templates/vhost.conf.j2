@@ -1,0 +1,31 @@
+server {
+  listen 80;
+  server_name {{ item.server_name }};
+  root {{ item.root }};
+  index {{ item.index | default('index.html') }};
+
+  access_log /var/log/nginx/{{ item.server_name }}.access.log;
+  error_log  /var/log/nginx/{{ item.server_name }}.error.log;
+
+  location / {
+    try_files $uri $uri/ =404;
+  add_header X-Environment {{ env_name }};
+    add_header X-Server {{ inventory_hostname }};
+    add_header {{ hostvars[inventory_hostname].server_specific.extra_header | default('X-Extra-Header') }} "1";
+  }
+
+  # Live metrics endpoints for the dashboard
+  location = /nginx_status {
+    stub_status on;
+    access_log off;
+  }
+
+  location = /ping {
+    access_log off;
+    return 204;
+  }
+
+  {% if item.ssl | default(false) %}
+  # SSL configuration placeholder
+  {% endif %}
+}

@@ -1,0 +1,46 @@
+---
+- name: Install HAProxy
+  apt:
+    name: haproxy
+    state: present
+  become: true
+
+- name: Assert there are webservers defined
+  assert:
+    that: groups['webservers'] | length > 0
+    fail_msg: "Aucun serveur web défini dans l'inventaire"
+
+- name: Template HAProxy configuration
+  template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+  notify: Restart haproxy
+  become: true
+
+- name: Enable and start haproxy
+  service:
+    name: haproxy
+    state: started
+    enabled: true
+  become: true
+
+- name: Perform backend health checks (curl loop)
+  shell: |
+    set -e
+    for h in {{ groups['webservers'] | join(' ') }}; do
+      curl -sf http://$h >/dev/null || exit 1
+    done
+  changed_when: false
+  register: backend_health
+
+- debug:
+    var: backend_health.rc
+
+- name: Test load balancer distribution (simple)
+  shell: |
+    for i in $(seq 1 4); do curl -s http://lb1 | grep -o 'web[0-9]' || true; done
+  register: lb_test
+  changed_when: false
+
+- debug:
+    var: lb_test.stdout_lines

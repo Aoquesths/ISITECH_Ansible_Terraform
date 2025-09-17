@@ -1,0 +1,24 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Ansible
+*.retry
+*.log
+.ansible/
+
+# Env/Secrets
+.env
+.env.*
+
+# Docker
+*.pid
+*.pid.lock
+*.swp

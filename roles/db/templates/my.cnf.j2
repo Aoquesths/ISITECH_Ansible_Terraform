@@ -1,0 +1,18 @@
+[mysqld]
+user = mysql
+bind-address = 0.0.0.0
+
+innodb_buffer_pool_size = {{ (mysql.innodb_buffer_pool_size_mb | default(256)) }}M
+max_connections = 200
+
+{% if mysql.replication.enabled | default(false) %}
+server-id = {{ server_id | default(1) }}
+log_bin = /var/log/mysql/mysql-bin.log
+binlog_do_db = {{ mysql.databases[0].name }}
+{% endif %}
+
+{% if env_name == 'dev' %}
+log_error_verbosity = 3
+{% else %}
+log_error_verbosity = 2
+{% endif %}

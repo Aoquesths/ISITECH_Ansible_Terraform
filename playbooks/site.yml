@@ -1,0 +1,41 @@
+---
+- name: Préflight checks tous hôtes
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Vérifier OS supporté
+      assert:
+        that: ansible_facts['os_family'] == 'Debian'
+        fail_msg: "OS non supporté"
+
+    - name: Vérifier mémoire minimale
+      assert:
+        that: ansible_facts['memtotal_mb'] >= 200
+        fail_msg: "Mémoire insuffisante"
+
+    - name: Mise à jour index apt (économie via cache)
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      become: true
+
+- name: Commun - préparation
+  hosts: all
+  roles:
+    - common
+
+- name: Déploiement web (rolling)
+  hosts: webservers
+  serial: 1
+  roles:
+    - web
+
+- name: Base de données
+  hosts: dbservers
+  roles:
+    - db
+
+- name: Load balancer
+  hosts: loadbalancers
+  roles:
+    - haproxy

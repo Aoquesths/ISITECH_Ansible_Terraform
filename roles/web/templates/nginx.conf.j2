@@ -1,0 +1,33 @@
+user www-data;
+worker_processes {{ nginx.worker_processes | default('auto') }};
+error_log /var/log/nginx/error.log warn;
+pid /run/nginx.pid;
+
+events {
+  worker_connections {{ nginx.worker_connections | default(1024) }};
+}
+
+http {
+  include       /etc/nginx/mime.types;
+  default_type  application/octet-stream;
+  sendfile        on;
+  keepalive_timeout {{ nginx.keepalive_timeout | default(65) }};
+  {% if nginx.gzip | default(false) %}
+  gzip on;
+  gzip_types text/plain text/css application/json application/javascript application/xml+rss;
+  {% endif %}
+
+  {% if nginx.enable_status | default(false) %}
+  server {
+    listen 81;
+    location /nginx_status {
+      stub_status on;
+      allow 127.0.0.1;
+      deny all;
+    }
+  }
+  {% endif %}
+
+  include /etc/nginx/conf.d/*.conf;
+  include /etc/nginx/sites-enabled/*;
+}

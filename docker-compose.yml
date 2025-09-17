@@ -1,0 +1,58 @@
+version: '3.8'
+services:
+  web1:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.base
+    container_name: web1
+    hostname: web1
+    networks: [infranet]
+    ports:
+      - "8081:80"
+      - "22211:22"
+    environment:
+      ROLE: web
+
+  web2:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.base
+    container_name: web2
+    hostname: web2
+    networks: [infranet]
+    ports:
+      - "8082:80"
+      - "22212:22"
+    environment:
+      ROLE: web
+
+  db1:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.base
+    container_name: db1
+    hostname: db1
+    networks: [infranet]
+    ports:
+      - "33060:3306"
+      - "22213:22"
+    environment:
+      ROLE: db
+
+  lb1:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.base
+    container_name: lb1
+    hostname: lb1
+    networks: [infranet]
+    ports:
+      - "18080:80"      # Public HTTP (évite conflit)
+      - "8404:8404"    # HAProxy stats
+      - "22210:22"
+    environment:
+      ROLE: lb
+
+networks:
+  infranet:
+    driver: bridge

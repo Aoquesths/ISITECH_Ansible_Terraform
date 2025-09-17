@@ -1,0 +1,27 @@
+---
+- name: Restart mysql
+  block:
+    - name: Restart mysql service
+      service:
+        name: mysql
+        state: restarted
+      become: true
+  rescue:
+    - name: Ensure runtime directory exists (handler)
+      file:
+        path: /var/run/mysqld
+        state: directory
+        owner: mysql
+        group: mysql
+        mode: '0755'
+      become: true
+    - name: Start mysqld daemonized (handler fallback)
+      command: >-
+        mysqld --daemonize
+               --user=mysql
+               --pid-file=/var/run/mysqld/mysqld.pid
+               --socket=/var/run/mysqld/mysqld.sock
+               --datadir=/var/lib/mysql
+      args:
+        creates: /var/run/mysqld/mysqld.sock
+      become: true

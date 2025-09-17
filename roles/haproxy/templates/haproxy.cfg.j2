@@ -1,0 +1,35 @@
+global
+  log /dev/log    local0
+  log /dev/log    local1 notice
+  maxconn {{ haproxy.maxconn | default(2048) }}
+  daemon
+
+defaults
+  log     global
+  mode    http
+  option  httplog
+  option  dontlognull
+  timeout connect {{ haproxy.timeout_connect | default('5s') }}
+  timeout client  {{ haproxy.timeout_client | default('50s') }}
+  timeout server  {{ haproxy.timeout_server | default('50s') }}
+
+frontend http-in
+  bind *:80
+  default_backend web-backend
+
+backend web-backend
+  balance {{ haproxy.algorithm | default('roundrobin') }}
+{% for host in groups['webservers'] %}
+  server {{ host }} {{ host }}:80 weight {{ hostvars[host].server_specific.weight | default(1) }} check
+{% endfor %}
+
+{% if haproxy.stats is defined and haproxy.stats.enable | default(false) %}
+listen stats
+  bind {{ haproxy.stats.bind | default('0.0.0.0:8404') }}
+  mode http
+  stats enable
+  stats uri {{ haproxy.stats.uri | default('/') }}
+  {% if haproxy.stats.auth is defined %}
+  stats auth {{ haproxy.stats.auth }}
+  {% endif %}
+{% endif %}

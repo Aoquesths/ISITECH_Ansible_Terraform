@@ -1,0 +1,6 @@
+---
+- name: Playbook LB uniquement
+  hosts: loadbalancers
+  roles:
+    - common
+    - haproxy

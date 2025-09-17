@@ -1,0 +1,225 @@
+---
+- name: Install MySQL server and client
+  apt:
+    name:
+      - mysql-server
+      - mysql-client
+    state: present
+  become: true
+
+- block:
+    - name: Ensure MySQL service started (service module)
+      service:
+        name: mysql
+        state: started
+        enabled: true
+      become: true
+  rescue:
+    - name: Ensure runtime directory exists
+      file:
+        path: /var/run/mysqld
+        state: directory
+        owner: mysql
+        group: mysql
+        mode: '0755'
+      become: true
+
+    - name: Ensure data directory ownership
+      file:
+        path: /var/lib/mysql
+        state: directory
+        owner: mysql
+        group: mysql
+        recurse: true
+      become: true
+
+    - name: Check if mysql system database exists
+      stat:
+        path: /var/lib/mysql/mysql
+      register: mysql_system_db
+      become: true
+
+    - name: Initialize MySQL data directory (insecure)
+      command: mysqld --initialize-insecure --user=mysql --datadir=/var/lib/mysql
+      when: not mysql_system_db.stat.exists
+      become: true
+
+    - name: Start mysqld daemonized (fallback)
+      command: >-
+        mysqld --daemonize
+               --user=mysql
+               --pid-file=/var/run/mysqld/mysqld.pid
+               --socket=/var/run/mysqld/mysqld.sock
+               --datadir=/var/lib/mysql
+      args:
+        creates: /var/run/mysqld/mysqld.sock
+      become: true
+
+- name: Quick check if MySQL is listening
+  wait_for:
+    host: 127.0.0.1
+    port: 3306
+    delay: 1
+    timeout: 3
+  register: mysql_quick_check
+  ignore_errors: true
+
+- name: Run fallback startup if not listening
+  block:
+    - name: Ensure runtime directory exists
+      file:
+        path: /var/run/mysqld
+        state: directory
+        owner: mysql
+        group: mysql
+        mode: '0755'
+      become: true
+
+    - name: Ensure data directory ownership
+      file:
+        path: /var/lib/mysql
+        state: directory
+        owner: mysql
+        group: mysql
+        recurse: true
+      become: true
+
+    - name: Check if mysql system database exists
+      stat:
+        path: /var/lib/mysql/mysql
+      register: mysql_system_db2
+      become: true
+
+    - name: Initialize MySQL data directory (insecure)
+      command: mysqld --initialize-insecure --user=mysql --datadir=/var/lib/mysql
+      when: not mysql_system_db2.stat.exists
+      become: true
+
+    - name: Start mysqld daemonized (fallback)
+      command: >-
+        mysqld --daemonize
+               --user=mysql
+               --pid-file=/var/run/mysqld/mysqld.pid
+               --socket=/var/run/mysqld/mysqld.sock
+               --datadir=/var/lib/mysql
+      args:
+        creates: /var/run/mysqld/mysqld.sock
+      become: true
+  when: mysql_quick_check is failed
+
+- name: Wait for MySQL port to be ready (final)
+  wait_for:
+    host: 127.0.0.1
+    port: 3306
+    delay: 2
+    timeout: 60
+
+- name: Secure root account using existing password if set
+  mysql_user:
+    name: root
+    host: localhost
+    password: "{{ mysql.root_password }}"
+    login_user: root
+    login_password: "{{ mysql.root_password }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    update_password: on_create
+  register: root_secure_by_password
+  ignore_errors: true
+  become: true
+
+- name: Secure root account via implicit admin (fallback)
+  mysql_user:
+    name: root
+    host: localhost
+    password: "{{ mysql.root_password }}"
+    check_implicit_admin: true
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  when: root_secure_by_password is failed
+  become: true
+
+- name: Copy my.cnf tuning
+  template:
+    src: my.cnf.j2
+    dest: /etc/mysql/conf.d/zz-tuning.cnf
+  become: true
+
+- block:
+    - name: Restart mysql service (immediate)
+      service:
+        name: mysql
+        state: restarted
+      become: true
+  rescue:
+    - name: Ensure runtime directory exists (restart fallback)
+      file:
+        path: /var/run/mysqld
+        state: directory
+        owner: mysql
+        group: mysql
+        mode: '0755'
+      become: true
+    - name: Start mysqld daemonized (restart fallback)
+      command: >-
+        mysqld --daemonize
+               --user=mysql
+               --pid-file=/var/run/mysqld/mysqld.pid
+               --socket=/var/run/mysqld/mysqld.sock
+               --datadir=/var/lib/mysql
+      args:
+        creates: /var/run/mysqld/mysqld.sock
+      become: true
+
+- name: Wait for MySQL port after config
+  wait_for:
+    host: 127.0.0.1
+    port: 3306
+    delay: 2
+    timeout: 60
+
+- name: Create databases
+  mysql_db:
+    name: "{{ item.name }}"
+    encoding: "{{ item.encoding }}"
+    collation: "{{ item.collation }}"
+    state: present
+    login_user: root
+    login_password: "{{ mysql.root_password }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  loop: "{{ mysql.databases }}"
+  become: true
+
+- name: Create users
+  mysql_user:
+    name: "{{ item.name }}"
+    password: "{{ item.password }}"
+    priv: "{{ item.priv }}"
+    host: "%"
+    state: present
+    login_user: root
+    login_password: "{{ mysql.root_password }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  loop: "{{ mysql.users }}"
+  become: true
+
+- name: Flush privileges (SQL)
+  community.mysql.mysql_query:
+    query: "FLUSH PRIVILEGES"
+    login_user: root
+    login_password: "{{ mysql.root_password }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  become: true
+
+- name: Wait for MySQL port
+  wait_for:
+    port: 3306
+    delay: 2
+    timeout: 30
+
+- name: Simple connectivity test
+  shell: "mysql -u{{ mysql.users[0].name }} -p{{ mysql.users[0].password }} -e 'SHOW DATABASES;'"
+  register: mysql_test
+  changed_when: false
+  become: true
+
+- debug:
+    var: mysql_test.stdout_lines
