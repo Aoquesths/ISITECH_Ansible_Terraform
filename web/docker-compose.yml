@@ -1,0 +1,13 @@
+services:
+  web:
+    build: .
+    image: local/devops-web:latest
+    container_name: devops-web
+    ports:
+      - "19080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s

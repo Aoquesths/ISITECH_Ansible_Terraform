@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<title>DevOps Dashboard — {{ env_name | default('dev') | upper }} — {{ inventory_hostname | default('web') }}</title>
+	<title>DevOps Dashboard — DEV — web1</title>
 	<style>
 		/*
 			Classic dashboard layout preserved.
@@ -105,10 +105,10 @@
 	<header>
 		<div class="title">
 			<h1>DevOps Dashboard</h1>
-			<span class="env-pill">Env: {{ env_name | default('dev') }} · Host: {{ inventory_hostname | default('web') }}</span>
+			<span class="env-pill">Env: dev · Host: web1</span>
 		</div>
 		<div class="meta">
-			OS: {{ ansible_distribution | default('GNU/Linux') }} {{ ansible_distribution_version | default('') }} · Kernel: {{ ansible_kernel | default('') }}
+			OS: GNU/Linux  · Kernel: 
 		</div>
 		<div class="divider"></div>
 	</header>
@@ -126,11 +126,11 @@
 			</div>
 			<div class="card" style="grid-column: span 3;">
 				<h3>Environment</h3>
-				<div class="kpi-value">{{ env_name | default('dev') | upper }}</div>
+				<div class="kpi-value">DEV</div>
 			</div>
 			<div class="card" style="grid-column: span 3;">
 				<h3>Server</h3>
-				<div class="kpi-value">{{ inventory_hostname | default('web') }}</div>
+				<div class="kpi-value">web1</div>
 			</div>
 		</section>
 
@@ -143,9 +143,9 @@
 						<thead><tr><th>Hostname</th><th>Primary IP</th><th>Domain</th></tr></thead>
 						<tbody>
 							<tr>
-								<td>{{ inventory_hostname | default('web') }}</td>
-								<td>{{ ansible_default_ipv4.address | default('127.0.0.1') }}</td>
-								<td>{{ primary_domain | default('local') }}</td>
+								<td>web1</td>
+								<td>127.0.0.1</td>
+								<td>local</td>
 							</tr>
 						</tbody>
 					</table>
@@ -155,8 +155,8 @@
 					<table>
 						<thead><tr><th>Component</th><th>Value</th></tr></thead>
 						<tbody>
-							<tr><td>OS</td><td>{{ ansible_distribution | default('GNU/Linux') }} {{ ansible_distribution_version | default('') }}</td></tr>
-							<tr><td>Kernel</td><td>{{ ansible_kernel | default('') }}</td></tr>
+							<tr><td>OS</td><td>GNU/Linux </td></tr>
+							<tr><td>Kernel</td><td></td></tr>
 							<tr><td>Web Server</td><td>nginx</td></tr>
 						</tbody>
 					</table>
@@ -184,9 +184,9 @@
 				<div class="card">
 					<h3 style="margin:0 0 6px; color:var(--accent-2)">Inventory</h3>
 					<ul style="margin:0; padding-left:18px;">
-						<li>Env: {{ env_name | default('dev') }}</li>
-						<li>Host: {{ inventory_hostname | default('web') }}</li>
-						<li>Domain: {{ primary_domain | default('local') }}</li>
+						<li>Env: dev</li>
+						<li>Host: web1</li>
+						<li>Domain: local</li>
 					</ul>
 				</div>
 			</div>
